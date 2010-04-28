@@ -24,7 +24,7 @@ parser = OptionParser.new do|opts|
     options.capture = true
   end
 
-  opts.on( '-p', '--password', 'Yuur Heroku password' ) do |password|
+  opts.on( '-p', '--password', 'Your Heroku password' ) do |password|
     options.password = password
   end
 
