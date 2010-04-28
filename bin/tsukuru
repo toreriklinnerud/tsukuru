@@ -108,8 +108,14 @@ FileUtils.mkdir_p(tempdir)
 compression_type = (bundle_file =~ /.gz$/) ? :z : :j
 run :tar, :x, compression_type, :C => tempdir, :f => bundle_file
 
-extracted_folder = Dir.glob("#{tempdir}/*").first
+extracted_folder = Pathname.new(Dir.glob("#{tempdir}/*").first)
 error("Extraction of #{tempdir} failed") unless extracted_folder
+
+if !options.local
+  archive = options.target + 'archive'
+  FileUtils.mkdir_p(archive)
+  run 'tar', '-cj', {:f => "#{archive}/#{bundle[:name]}.tar.bz2", :C => extracted_folder.dirname}, extracted_folder.basename
+end
 
 FileUtils.mkdir_p(options.target)
 FileUtils.rm_rf(options.current)
@@ -139,11 +145,5 @@ end
 
 in_app 'mkdir -p tmp'
 in_app 'touch', 'tmp/restart'
-
-if !options.local
-  archive = options.target + 'archive'
-  FileUtils.mkdir_p(archive)
-  run 'tar', '-cjf', "#{archive}.tar.bz2", extracted_folder
-end
 
 FileUtils.rm_rf(tempdir)
