@@ -1,0 +1,150 @@
+#!/usr/bin/env ruby
+
+require 'heroku'
+require 'restclient'
+require 'ruby-unix-now'
+require 'optparse'
+require 'pathname'
+require 'fileutils'
+
+options = Struct.new(:capture, :local, :reindex, :app, :target, :current, :username, :password).new
+
+parser = OptionParser.new do|opts|
+   opts.banner = "Usage: reanimate"
+
+   opts.on( '-a', '--app NAME', 'Application name' ) do |app|
+     options.app = app
+   end
+
+   opts.on( '-c', '--capture', 'Capture a new bundle instead of using the latest one' ) do
+     options.capture = true
+   end
+
+   opts.on( '-p', '--password', 'Yuur Heroku password' ) do |password|
+     options.password = password
+   end
+
+   opts.on('-h', '--help', 'Display this message') do
+    puts opts
+    exit
+   end
+
+   opts.on( '-l', '--local FILE', 'Use a local bundle instead of downloading' ) do |file|
+     options.local = file
+   end
+
+   opts.on('-t', '--target PATH', 'Path to where the application should be restored') do |path|
+     options.target = Pathname.new(path)
+   end
+
+   opts.on( '-r', '--reindex', 'Index to enable searching' ) do
+     options.reindex = true
+   end
+
+   opts.on( '-u', '--username', 'Your Heroku username' ) do |password|
+     options.password = password
+   end
+
+end.parse!
+
+def error(msg)
+  puts(msg)
+  exit(-1)
+end
+
+error('Specify the app name') unless options.app
+
+options.target ||= Pathname('/apps') + options.app
+options.current = options.target + 'current'
+@options = options
+
+if !options.local
+  error('You must provide your heroku username') unless options.username
+  error('You must provide your heroku password') unless options.password
+
+  heroku = Heroku::Client.new(*CREDENTIALS)
+  if options.capture
+    heroku.bundle_capture(options.app)
+    puts 'Starting capture'
+
+    sleep 10 until((bundle = heroku.bundles(options.app).last)[:state] == 'complete')
+    puts 'Capture complete'
+  else
+    bundle = heroku.bundles(options.app).last
+  end
+end
+
+bundle_file = options.local || "/tmp/#{bundle[:name]}.tar.gz"
+
+if options.local
+  puts "Using local bundle #{options.local}"
+else
+  error('Bundle is not complete, please check') unless bundle[:state] == 'complete'
+  url         = heroku.bundle_url(options.app, bundle[:name])
+  puts "Downloading #{bundle[:name]}"
+  url = heroku.bundle_url(options.app, bundle[:name])
+  File.open(bundle_file, "wb") { |f| f.write RestClient.get(url) }
+  puts 'Download complete'
+end
+
+if options.local
+  error('The local file does not exist.') unless File.exist?(options.local)
+  error('The local files not end in tar.gz or tar.bz2') unless options.local =~ /(tar\.gz|tar.bz2)$/
+end
+
+def in_path(*commands)
+  run :cd, @options.path, '&&', commands
+end
+
+def in_app(*commands)
+  run :cd, @options.current, '&&', commands
+end
+
+sunspot_pid_file = options.current + "tmp/pids/sunspot-solr-production.pid"
+Process.kill('KILL', File.read(sunspot_pid_file).to_i) if File.exist?(sunspot_pid_file) rescue Errno::ESRCH
+
+tempdir = Pathname('/tmp') + 'reanimate' + rand(10**10).to_s
+FileUtils.mkdir_p(tempdir)
+
+compression_type = (bundle_file =~ /.gz$/) ? :z : :j
+run :tar, :x, compression_type, :C => tempdir, :f => bundle_file
+
+extracted_folder = Dir.glob("#{tempdir}/*").first
+error("Extraction of #{tempdir} failed") unless extracted_folder
+
+FileUtils.mkdir_p(options.target)
+FileUtils.rm_rf(options.current)
+FileUtils.mv(extracted_folder, options.current)
+
+db_file = options.current + 'db/pgdump.sql'
+
+run :dropdb, options.app if `psql --list`.include?(options.app)
+run :createdb, options.app
+run :sed, "-i '' -E 's/Owner: [a-z]+/Owner: pistachio/g'", db_file
+run :sed, "-i '' -E 's/OWNER TO [a-z]+/OWNER TO pistachio/g'", db_file
+run :psql, :q, :f => db_file, :d => options.app
+
+database_config = options.current + 'config/database.yml'
+if File.exist?(database_config)
+  in_app "sed -i '' -E 's/database: alpha_dev/database: #{options.app}/g'", database_config
+end
+in_app 'bundle install'
+
+
+if options.reindex
+  in_app 'mkdir -p solr/pids/production'
+  in_app 'RAILS_ENV=production rake sunspot:solr:start'
+  sleep 15
+  in_app 'RAILS_ENV=production bundle exec rake sunspot:solr:reindex'
+end
+
+in_app 'mkdir -p tmp'
+in_app 'touch', 'tmp/restart'
+
+if !options.local
+  archive = options.target + 'archive'
+  FileUtils.mkdir_p(archive)
+  run 'tar', '-cjf', "#{archive}.tar.bz2", extracted_folder
+end
+
+FileUtils.rm_rf(tempdir)
