@@ -10,40 +10,44 @@ require 'fileutils'
 options = Struct.new(:capture, :local, :reindex, :app, :target, :current, :username, :password).new
 
 parser = OptionParser.new do|opts|
-   opts.banner = "Usage: reanimate"
+  opts.banner = <<-TEXT
+    Tsukuru will fetch your latest Heroku bundle and prepare it for running locally
 
-   opts.on( '-a', '--app NAME', 'Application name' ) do |app|
-     options.app = app
-   end
+    Usage: tsukuru
+  TEXT
 
-   opts.on( '-c', '--capture', 'Capture a new bundle instead of using the latest one' ) do
-     options.capture = true
-   end
+  opts.on( '-a', '--app NAME', 'Application name' ) do |app|
+    options.app = app
+  end
 
-   opts.on( '-p', '--password', 'Yuur Heroku password' ) do |password|
-     options.password = password
-   end
+  opts.on( '-c', '--capture', 'Capture a new bundle instead of using the latest one' ) do
+    options.capture = true
+  end
 
-   opts.on('-h', '--help', 'Display this message') do
-    puts opts
-    exit
-   end
+  opts.on( '-p', '--password', 'Yuur Heroku password' ) do |password|
+    options.password = password
+  end
 
-   opts.on( '-l', '--local FILE', 'Use a local bundle instead of downloading' ) do |file|
-     options.local = file
-   end
+  opts.on('-h', '--help', 'Display this message') do
+   puts opts
+   exit
+  end
 
-   opts.on('-t', '--target PATH', 'Path to where the application should be restored') do |path|
-     options.target = Pathname.new(path)
-   end
+  opts.on( '-l', '--local FILE', 'Use a local bundle instead of downloading' ) do |file|
+    options.local = file
+  end
 
-   opts.on( '-r', '--reindex', 'Index to enable searching' ) do
-     options.reindex = true
-   end
+  opts.on('-t', '--target PATH', 'Path to where the application should be restored') do |path|
+    options.target = Pathname.new(path)
+  end
 
-   opts.on( '-u', '--username', 'Your Heroku username' ) do |password|
-     options.password = password
-   end
+  opts.on( '-r', '--reindex', 'Start search deamon and reindex (sunspot + solr only)' ) do
+    options.reindex = true
+  end
+
+  opts.on( '-u', '--username', 'Your Heroku username' ) do |password|
+    options.password = password
+  end
 
 end.parse!
 
@@ -120,8 +124,8 @@ db_file = options.current + 'db/pgdump.sql'
 
 run :dropdb, options.app if `psql --list`.include?(options.app)
 run :createdb, options.app
-run :sed, "-i '' -E 's/Owner: [a-z]+/Owner: pistachio/g'", db_file
-run :sed, "-i '' -E 's/OWNER TO [a-z]+/OWNER TO pistachio/g'", db_file
+run :sed, "-i '' -E 's/Owner: [a-z]+/Owner: #{options.app}/g'", db_file
+run :sed, "-i '' -E 's/OWNER TO [a-z]+/OWNER TO #{options.app}/g'", db_file
 run :psql, :q, :f => db_file, :d => options.app
 
 database_config = options.current + 'config/database.yml'
