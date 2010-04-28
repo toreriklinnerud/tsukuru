@@ -7,6 +7,9 @@ begin
     gemspec.email = "tel@jklm.no"
     gemspec.homepage = "http://github.com/toreriklinnerud/tsukuru"
     gemspec.authors = ["Tor Erik Linnerud"]
+    gemspec.add_dependency 'ruby-unix-now'
+    gemspec.add_dependency 'rest-client'
+    gemspec.add_dependency 'heroku'
 
   end
   Jeweler::GemcutterTasks.new
