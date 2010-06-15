@@ -133,7 +133,7 @@ database_config = options.current + 'config/database.yml'
 if File.exist?(database_config)
   in_app "sed -i '' -E 's/database: alpha_dev/database: #{options.app}/g'", database_config
 end
-in_app 'bundle install'
+in_app 'bundle install --without shell --without test'
 
 
 if options.reindex
