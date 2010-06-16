@@ -7,6 +7,7 @@ require 'ruby-unix-now'
 require 'optparse'
 require 'pathname'
 require 'fileutils'
+require 'yaml'
 
 options = Struct.new(:capture, :local, :reindex, :app, :target, :current, :username, :password).new
 
@@ -125,15 +126,25 @@ db_file = options.current + 'db/pgdump.sql'
 
 run :dropdb, options.app if `psql --list`.include?(options.app)
 run :createdb, options.app
-run :sed, "-i '' -E 's/Owner: [a-z]+/Owner: #{options.app}/g'", db_file
-run :sed, "-i '' -E 's/OWNER TO [a-z]+/OWNER TO #{options.app}/g'", db_file
-run :psql, :q, :f => db_file, :d => options.app
+run :sed, "-i '' -E '/^ALTER .* OWNER/d'", db_file
+run :sed, "-i '' -E '/^ALTER .* OWNED/d'", db_file
+run :psql, :q, {:f => db_file, :d => options.app}, '> /dev/null'
 
 database_config = options.current + 'config/database.yml'
 if File.exist?(database_config)
-  in_app "sed -i '' -E 's/database: alpha_dev/database: #{options.app}/g'", database_config
+  puts 'Writing database configuration'
+  File.open(database_config, 'w') do |file|
+    config = {'fallback' => {
+      'adapter' => 'postgresql',
+      'host' => 'localhost',
+      'min_messages' => 'warning',
+      'encoding' =>'utf-8',
+      'timeout' => 5000,
+      'database' => options.app}}
+    file.puts(config.to_yaml)
+  end
 end
-in_app 'bundle install --without shell'
+in_app 'bundle install --without shell --relock'
 
 
 if options.reindex
