@@ -56,7 +56,12 @@ options.current = options.target + 'current'
 @options = options
 
 if !options.local
-  credentials_file = File.expand_path("~/.heroku/credentials")
+  credentials_file = begin
+    File.expand_path("~/.heroku/credentials")
+  rescue Argumenterror
+    '/var/root/.heroku/credentials'
+  end
+
   unless File.exist?(credentials_file)
     error("Run 'heroku info --app #{options.app}' once to set up your Heroku credentials")
   end
